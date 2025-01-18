@@ -6,42 +6,46 @@ import io.restassured.RestAssured;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 
-public class GitLabEpicAndIssueValidator {
+public class GitLabGroupValidation {
 
     private static final String GITLAB_API_BASE_URL = "https://gitlab.com/api/v4";
     private static final String PRIVATE_TOKEN = "your_personal_access_token";
 
     public static void main(String[] args) {
         int groupId = 12345; // Replace with your GitLab group ID
-        validateEpicsAndIssues(groupId);
+        validateGroupEpicsAndIssues(groupId);
     }
 
-    public static void validateEpicsAndIssues(int groupId) {
+    public static void validateGroupEpicsAndIssues(int groupId) {
         RestAssured.baseURI = GITLAB_API_BASE_URL;
-
-        // Initialize Gson
         Gson gson = new Gson();
 
+        // Step 1: Validate Epics
+        validateEpicsUnderGroup(groupId, gson);
+
+        // Step 2: Validate Issues in Projects
+        validateIssuesInProjectsUnderGroup(groupId, gson);
+    }
+
+    private static void validateEpicsUnderGroup(int groupId, Gson gson) {
+        System.out.println("Validating epics under group...");
         int currentPage = 1;
-        int perPage = 50; // Maximum number of results per page
+        int perPage = 50;
         boolean hasMorePages = true;
 
-        // Loop through all pages of epics
         while (hasMorePages) {
-            RequestSpecification request = RestAssured.given()
+            RequestSpecification epicRequest = RestAssured.given()
                     .header("PRIVATE-TOKEN", PRIVATE_TOKEN)
-                    .header("Content-Type", "application/json")
                     .queryParam("page", currentPage)
                     .queryParam("per_page", perPage);
 
-            Response epicResponse = request.get("/groups/" + groupId + "/epics");
+            Response epicResponse = epicRequest.get("/groups/" + groupId + "/epics");
 
             if (epicResponse.getStatusCode() != 200) {
                 System.err.println("Failed to fetch epics. HTTP Error Code: " + epicResponse.getStatusCode());
                 return;
             }
 
-            // Parse the response into a JsonArray
             JsonArray epics = gson.fromJson(epicResponse.getBody().asString(), JsonArray.class);
 
             if (epics.size() == 0) {
@@ -49,67 +53,100 @@ public class GitLabEpicAndIssueValidator {
                 break;
             }
 
-            // Process each epic
             for (JsonElement epicElement : epics) {
                 JsonObject epic = epicElement.getAsJsonObject();
+                String title = epic.get("title").getAsString();
+                boolean hasStartDate = epic.has("start_date") && !epic.get("start_date").isJsonNull();
+                boolean hasDueDate = epic.has("due_date") && !epic.get("due_date").isJsonNull();
 
-                String epicTitle = epic.has("title") ? epic.get("title").getAsString() : "Unknown Epic";
-                String startDate = epic.has("start_date") && !epic.get("start_date").isJsonNull()
-                        ? epic.get("start_date").getAsString()
-                        : null;
-                String endDate = epic.has("due_date") && !epic.get("due_date").isJsonNull()
-                        ? epic.get("due_date").getAsString()
-                        : null;
-
-                // Check if the epic has a start and end date
-                if (startDate == null || endDate == null) {
-                    System.err.println("Epic '" + epicTitle + "' is missing start or end date.");
-                    continue;
+                if (!hasStartDate || !hasDueDate) {
+                    System.out.println("Epic '" + title + "' is missing start and/or due date.");
                 }
-
-                System.out.println("Epic '" + epicTitle + "' has valid start and end dates.");
-
-                // Fetch issues for the epic
-                int epicId = epic.get("id").getAsInt();
-                fetchAndValidateIssues(groupId, epicId, epicTitle, gson);
             }
 
-            // Check if there are more pages
             String nextPageLink = epicResponse.getHeader("X-Next-Page");
             hasMorePages = (nextPageLink != null && !nextPageLink.isEmpty());
             currentPage++;
         }
+        System.out.println("Epic validation completed.\n");
     }
 
-    private static void fetchAndValidateIssues(int groupId, int epicId, String epicTitle, Gson gson) {
-        RequestSpecification request = RestAssured.given()
-                .header("PRIVATE-TOKEN", PRIVATE_TOKEN)
-                .header("Content-Type", "application/json");
+    private static void validateIssuesInProjectsUnderGroup(int groupId, Gson gson) {
+        System.out.println("Validating issues in projects under group...");
+        int currentPage = 1;
+        int perPage = 50;
+        boolean hasMorePages = true;
 
-        Response issueResponse = request.get("/groups/" + groupId + "/epics/" + epicId + "/issues");
+        while (hasMorePages) {
+            RequestSpecification projectRequest = RestAssured.given()
+                    .header("PRIVATE-TOKEN", PRIVATE_TOKEN)
+                    .queryParam("page", currentPage)
+                    .queryParam("per_page", perPage);
 
-        if (issueResponse.getStatusCode() != 200) {
-            System.err.println("Failed to fetch issues for epic '" + epicTitle + "'. HTTP Error Code: " + issueResponse.getStatusCode());
-            return;
-        }
+            Response projectResponse = projectRequest.get("/groups/" + groupId + "/projects");
 
-        // Parse the issues response into a JsonArray
-        JsonArray issues = gson.fromJson(issueResponse.getBody().asString(), JsonArray.class);
-
-        for (JsonElement issueElement : issues) {
-            JsonObject issue = issueElement.getAsJsonObject();
-
-            String issueTitle = issue.has("title") ? issue.get("title").getAsString() : "Unknown Issue";
-            Integer weight = issue.has("weight") && !issue.get("weight").isJsonNull()
-                    ? issue.get("weight").getAsInt()
-                    : null;
-
-            // Check if the issue has a weight
-            if (weight == null) {
-                System.err.println("Issue '" + issueTitle + "' in epic '" + epicTitle + "' is missing a weight.");
-            } else {
-                System.out.println("Issue '" + issueTitle + "' in epic '" + epicTitle + "' has a valid weight.");
+            if (projectResponse.getStatusCode() != 200) {
+                System.err.println("Failed to fetch projects. HTTP Error Code: " + projectResponse.getStatusCode());
+                return;
             }
+
+            JsonArray projects = gson.fromJson(projectResponse.getBody().asString(), JsonArray.class);
+
+            if (projects.size() == 0) {
+                hasMorePages = false;
+                break;
+            }
+
+            for (JsonElement projectElement : projects) {
+                JsonObject project = projectElement.getAsJsonObject();
+                int projectId = project.get("id").getAsInt();
+                String projectName = project.get("name").getAsString();
+
+                // Validate issues for this project
+                validateIssuesInProject(projectId, projectName, gson);
+            }
+
+            String nextPageLink = projectResponse.getHeader("X-Next-Page");
+            hasMorePages = (nextPageLink != null && !nextPageLink.isEmpty());
+            currentPage++;
+        }
+        System.out.println("Issue validation completed.\n");
+    }
+
+    private static void validateIssuesInProject(int projectId, String projectName, Gson gson) {
+        System.out.println("Validating issues in project: " + projectName);
+        int currentPage = 1;
+        int perPage = 50;
+        boolean hasMorePages = true;
+
+        while (hasMorePages) {
+            RequestSpecification issueRequest = RestAssured.given()
+                    .header("PRIVATE-TOKEN", PRIVATE_TOKEN)
+                    .queryParam("page", currentPage)
+                    .queryParam("per_page", perPage);
+
+            Response issueResponse = issueRequest.get("/projects/" + projectId + "/issues");
+
+            if (issueResponse.getStatusCode() != 200) {
+                System.err.println("Failed to fetch issues for project '" + projectName + "'. HTTP Error Code: " + issueResponse.getStatusCode());
+                return;
+            }
+
+            JsonArray issues = gson.fromJson(issueResponse.getBody().asString(), JsonArray.class);
+
+            for (JsonElement issueElement : issues) {
+                JsonObject issue = issueElement.getAsJsonObject();
+                String issueTitle = issue.get("title").getAsString();
+                boolean hasWeight = issue.has("weight") && !issue.get("weight").isJsonNull();
+
+                if (!hasWeight) {
+                    System.out.println("Issue '" + issueTitle + "' in project '" + projectName + "' is missing weight.");
+                }
+            }
+
+            String nextPageLink = issueResponse.getHeader("X-Next-Page");
+            hasMorePages = (nextPageLink != null && !nextPageLink.isEmpty());
+            currentPage++;
         }
     }
 }
