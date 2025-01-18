@@ -6,10 +6,16 @@ import io.restassured.RestAssured;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Date;
+
 public class GitLabGroupValidation {
 
     private static final String GITLAB_API_BASE_URL = "https://gitlab.com/api/v4";
     private static final String PRIVATE_TOKEN = "your_personal_access_token";
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_DATE_TIME;
 
     public static void main(String[] args) {
         int groupId = 12345; // Replace with your GitLab group ID
@@ -56,11 +62,15 @@ public class GitLabGroupValidation {
             for (JsonElement epicElement : epics) {
                 JsonObject epic = epicElement.getAsJsonObject();
                 String title = epic.get("title").getAsString();
-                boolean hasStartDate = epic.has("start_date") && !epic.get("start_date").isJsonNull();
-                boolean hasDueDate = epic.has("due_date") && !epic.get("due_date").isJsonNull();
+                String createdAt = epic.get("created_at").getAsString();
 
-                if (!hasStartDate || !hasDueDate) {
-                    System.out.println("Epic '" + title + "' is missing start and/or due date.");
+                if (isCreatedWithinLastYear(createdAt)) {
+                    boolean hasStartDate = epic.has("start_date") && !epic.get("start_date").isJsonNull();
+                    boolean hasDueDate = epic.has("due_date") && !epic.get("due_date").isJsonNull();
+
+                    if (!hasStartDate || !hasDueDate) {
+                        System.out.println("Epic '" + title + "' is missing start and/or due date.");
+                    }
                 }
             }
 
@@ -137,10 +147,14 @@ public class GitLabGroupValidation {
             for (JsonElement issueElement : issues) {
                 JsonObject issue = issueElement.getAsJsonObject();
                 String issueTitle = issue.get("title").getAsString();
-                boolean hasWeight = issue.has("weight") && !issue.get("weight").isJsonNull();
+                String createdAt = issue.get("created_at").getAsString();
 
-                if (!hasWeight) {
-                    System.out.println("Issue '" + issueTitle + "' in project '" + projectName + "' is missing weight.");
+                if (isCreatedWithinLastYear(createdAt)) {
+                    boolean hasWeight = issue.has("weight") && !issue.get("weight").isJsonNull();
+
+                    if (!hasWeight) {
+                        System.out.println("Issue '" + issueTitle + "' in project '" + projectName + "' is missing weight.");
+                    }
                 }
             }
 
@@ -148,5 +162,11 @@ public class GitLabGroupValidation {
             hasMorePages = (nextPageLink != null && !nextPageLink.isEmpty());
             currentPage++;
         }
+    }
+
+    private static boolean isCreatedWithinLastYear(String createdAt) {
+        LocalDate createdDate = LocalDate.parse(createdAt, DATE_FORMATTER);
+        LocalDate oneYearAgo = LocalDate.now().minusYears(1);
+        return createdDate.isAfter(oneYearAgo);
     }
 }
