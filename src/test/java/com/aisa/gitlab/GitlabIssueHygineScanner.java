@@ -22,66 +22,93 @@ public class GitLabEpicAndIssueValidator {
         // Initialize Gson
         Gson gson = new Gson();
 
-        // Fetch epics for the group
+        int currentPage = 1;
+        int perPage = 50; // Maximum number of results per page
+        boolean hasMorePages = true;
+
+        // Loop through all pages of epics
+        while (hasMorePages) {
+            RequestSpecification request = RestAssured.given()
+                    .header("PRIVATE-TOKEN", PRIVATE_TOKEN)
+                    .header("Content-Type", "application/json")
+                    .queryParam("page", currentPage)
+                    .queryParam("per_page", perPage);
+
+            Response epicResponse = request.get("/groups/" + groupId + "/epics");
+
+            if (epicResponse.getStatusCode() != 200) {
+                System.err.println("Failed to fetch epics. HTTP Error Code: " + epicResponse.getStatusCode());
+                return;
+            }
+
+            // Parse the response into a JsonArray
+            JsonArray epics = gson.fromJson(epicResponse.getBody().asString(), JsonArray.class);
+
+            if (epics.size() == 0) {
+                hasMorePages = false;
+                break;
+            }
+
+            // Process each epic
+            for (JsonElement epicElement : epics) {
+                JsonObject epic = epicElement.getAsJsonObject();
+
+                String epicTitle = epic.has("title") ? epic.get("title").getAsString() : "Unknown Epic";
+                String startDate = epic.has("start_date") && !epic.get("start_date").isJsonNull()
+                        ? epic.get("start_date").getAsString()
+                        : null;
+                String endDate = epic.has("due_date") && !epic.get("due_date").isJsonNull()
+                        ? epic.get("due_date").getAsString()
+                        : null;
+
+                // Check if the epic has a start and end date
+                if (startDate == null || endDate == null) {
+                    System.err.println("Epic '" + epicTitle + "' is missing start or end date.");
+                    continue;
+                }
+
+                System.out.println("Epic '" + epicTitle + "' has valid start and end dates.");
+
+                // Fetch issues for the epic
+                int epicId = epic.get("id").getAsInt();
+                fetchAndValidateIssues(groupId, epicId, epicTitle, gson);
+            }
+
+            // Check if there are more pages
+            String nextPageLink = epicResponse.getHeader("X-Next-Page");
+            hasMorePages = (nextPageLink != null && !nextPageLink.isEmpty());
+            currentPage++;
+        }
+    }
+
+    private static void fetchAndValidateIssues(int groupId, int epicId, String epicTitle, Gson gson) {
         RequestSpecification request = RestAssured.given()
                 .header("PRIVATE-TOKEN", PRIVATE_TOKEN)
                 .header("Content-Type", "application/json");
 
-        Response epicResponse = request.get("/groups/" + groupId + "/epics");
+        Response issueResponse = request.get("/groups/" + groupId + "/epics/" + epicId + "/issues");
 
-        if (epicResponse.getStatusCode() != 200) {
-            System.err.println("Failed to fetch epics. HTTP Error Code: " + epicResponse.getStatusCode());
+        if (issueResponse.getStatusCode() != 200) {
+            System.err.println("Failed to fetch issues for epic '" + epicTitle + "'. HTTP Error Code: " + issueResponse.getStatusCode());
             return;
         }
 
-        // Parse the response into a JsonArray
-        JsonArray epics = gson.fromJson(epicResponse.getBody().asString(), JsonArray.class);
+        // Parse the issues response into a JsonArray
+        JsonArray issues = gson.fromJson(issueResponse.getBody().asString(), JsonArray.class);
 
-        for (JsonElement epicElement : epics) {
-            JsonObject epic = epicElement.getAsJsonObject();
+        for (JsonElement issueElement : issues) {
+            JsonObject issue = issueElement.getAsJsonObject();
 
-            String epicTitle = epic.has("title") ? epic.get("title").getAsString() : "Unknown Epic";
-            String startDate = epic.has("start_date") && !epic.get("start_date").isJsonNull()
-                    ? epic.get("start_date").getAsString()
-                    : null;
-            String endDate = epic.has("due_date") && !epic.get("due_date").isJsonNull()
-                    ? epic.get("due_date").getAsString()
+            String issueTitle = issue.has("title") ? issue.get("title").getAsString() : "Unknown Issue";
+            Integer weight = issue.has("weight") && !issue.get("weight").isJsonNull()
+                    ? issue.get("weight").getAsInt()
                     : null;
 
-            // Check if the epic has a start and end date
-            if (startDate == null || endDate == null) {
-                System.err.println("Epic '" + epicTitle + "' is missing start or end date.");
-                continue;
-            }
-
-            System.out.println("Epic '" + epicTitle + "' has valid start and end dates.");
-
-            // Fetch issues for the epic
-            int epicId = epic.get("id").getAsInt();
-            Response issueResponse = request.get("/groups/" + groupId + "/epics/" + epicId + "/issues");
-
-            if (issueResponse.getStatusCode() != 200) {
-                System.err.println("Failed to fetch issues for epic '" + epicTitle + "'. HTTP Error Code: " + issueResponse.getStatusCode());
-                continue;
-            }
-
-            // Parse the issues response into a JsonArray
-            JsonArray issues = gson.fromJson(issueResponse.getBody().asString(), JsonArray.class);
-
-            for (JsonElement issueElement : issues) {
-                JsonObject issue = issueElement.getAsJsonObject();
-
-                String issueTitle = issue.has("title") ? issue.get("title").getAsString() : "Unknown Issue";
-                Integer weight = issue.has("weight") && !issue.get("weight").isJsonNull()
-                        ? issue.get("weight").getAsInt()
-                        : null;
-
-                // Check if the issue has a weight
-                if (weight == null) {
-                    System.err.println("Issue '" + issueTitle + "' in epic '" + epicTitle + "' is missing a weight.");
-                } else {
-                    System.out.println("Issue '" + issueTitle + "' in epic '" + epicTitle + "' has a valid weight.");
-                }
+            // Check if the issue has a weight
+            if (weight == null) {
+                System.err.println("Issue '" + issueTitle + "' in epic '" + epicTitle + "' is missing a weight.");
+            } else {
+                System.out.println("Issue '" + issueTitle + "' in epic '" + epicTitle + "' has a valid weight.");
             }
         }
     }
