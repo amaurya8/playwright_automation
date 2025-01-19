@@ -251,3 +251,9 @@ public class GitLabGroupValidation {
         System.out.println("Excel report generated: GitLabValidationReport.xlsx");
     }
 }
+
+<dependency>
+<groupId>org.apache.poi</groupId>
+<artifactId>poi</artifactId>
+<version>5.2.3</version>
+</dependency>
