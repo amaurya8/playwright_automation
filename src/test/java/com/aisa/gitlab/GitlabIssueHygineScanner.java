@@ -23,7 +23,6 @@ public class GitLabGroupValidation {
     private static final String GITLAB_API_BASE_URL = "https://gitlab.com/api/v4";
     private static final String PRIVATE_TOKEN = "your_personal_access_token";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_DATE_TIME;
-    private static final Set<Integer> VALID_PARENT_EPICS = Set.of(99999, 88888, 77777); // Predefined parent epics
 
     private static final List<Map<String, String>> epicFailures = new ArrayList<>();
     private static final List<Map<String, String>> issueFailures = new ArrayList<>();
@@ -101,14 +100,10 @@ public class GitLabGroupValidation {
             logEpicFailure(epicId, epicLink, "Missing start and/or due date");
         }
 
-        boolean hasParentEpic = epic.has("parent_id") && !epic.get("parent_id").isJsonNull();
-        if (hasParentEpic) {
-            int parentId = epic.get("parent_id").getAsInt();
-            if (!VALID_PARENT_EPICS.contains(parentId)) {
-                logEpicFailure(epicId, epicLink, "Invalid parent ID: " + parentId);
-            }
-        } else {
-            logEpicFailure(epicId, epicLink, "No parent ID");
+        // Crew Delivery Epic Check
+        boolean isCrewDeliveryEpic = epic.has("title") && epic.get("title").getAsString().toLowerCase().contains("crew delivery");
+        if (!isCrewDeliveryEpic) {
+            logEpicFailure(epicId, epicLink, "Not a Crew Delivery epic");
         }
     }
 
@@ -260,22 +255,11 @@ public class GitLabGroupValidation {
             row.createCell(2).setCellValue(failure.get("failure_message"));
         }
 
-        // Write the workbook to a file
-        try (FileOutputStream fos = new FileOutputStream("GitLabValidationReport.xlsx")) {
+        try (FileOutputStream fos = new FileOutputStream("GitLab_Validation_Report.xlsx")) {
             workbook.write(fos);
-            LOGGER.info("Excel report generated: GitLabValidationReport.xlsx");
         }
+
         workbook.close();
+        LOGGER.info("Excel report generated successfully.");
     }
 }
-
-<dependency>
-<groupId>org.slf4j</groupId>
-<artifactId>slf4j-api</artifactId>
-<version>2.0.9</version>
-</dependency>
-<dependency>
-<groupId>ch.qos.logback</groupId>
-<artifactId>logback-classic</artifactId>
-<version>1.4.9</version>
-</dependency>
