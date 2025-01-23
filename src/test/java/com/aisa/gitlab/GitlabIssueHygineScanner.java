@@ -101,13 +101,22 @@ public class GitLabGroupValidation {
             logEpicFailure(epicId, epicLink, "Missing start and/or due date");
         }
 
-        // Crew Delivery Epic Check
-        boolean isCrewDeliveryEpic = epic.has("title") && epic.get("title").getAsString().toLowerCase().contains("crew delivery");
+        // Check if the epic has the label "Crew Delivery Epic"
+        boolean isCrewDeliveryEpic = epic.has("labels") && containsLabel(epic.getAsJsonArray("labels"), "Crew Delivery Epic");
         if (isCrewDeliveryEpic) {
             logCrewDeliveryEpic(epicId, epicLink, createdAt);
         } else {
-            logEpicFailure(epicId, epicLink, "Not a Crew Delivery epic");
+            logEpicFailure(epicId, epicLink, "Not labeled as Crew Delivery Epic");
         }
+    }
+
+    private static boolean containsLabel(JsonArray labels, String targetLabel) {
+        for (JsonElement label : labels) {
+            if (label.getAsString().equalsIgnoreCase(targetLabel)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void logCrewDeliveryEpic(int epicId, String epicLink, String createdAt) {
