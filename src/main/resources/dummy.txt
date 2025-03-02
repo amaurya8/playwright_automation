@@ -11,3 +11,7 @@
         </plugin>
     </plugins>
 </build>
+
+mvn help:effective-pom | grep "<maven.compiler"
+
+$env:JAVA_HOME="C:\Program Files\Java\jdk-17"
